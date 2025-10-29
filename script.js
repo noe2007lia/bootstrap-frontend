@@ -63,51 +63,51 @@ $(document).ready(function () {
   const WINT_LAT = 47.4988;
   const WINT_LON = 8.7237;
 
-  $("#stationsBtn").on("click", function () {
-    $.ajax({
-      url: "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json",
-      method: "GET",
-      success: function (data) {
+ $("#stationsBtn").on("click", function () {
+  $.ajax({
+    url: "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json",
+    method: "GET",
+    success: function (data) {
+      console.log("Erste Station:", data[0]);  // Debug-Ausgabe
 
-        // Distanzberechnung (Haversine)
-        const getDistance = (lat1, lon1, lat2, lon2) => {
-          const R = 6371;
-          const dLat = (lat2 - lat1) * Math.PI / 180;
-          const dLon = (lon2 - lon1) * Math.PI / 180;
-          const a = Math.sin(dLat / 2) ** 2 +
-            Math.cos(lat1 * Math.PI / 180) *
-            Math.cos(lat2 * Math.PI / 180) *
-            Math.sin(dLon / 2) ** 2;
-          return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+      const getDistance = (lat1, lon1, lat2, lon2) => {
+        const R = 6371;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat/2) ** 2 +
+                  Math.cos(lat1 * Math.PI / 180) *
+                  Math.cos(lat2 * Math.PI / 180) *
+                  Math.sin(dLon/2) ** 2;
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+      };
+
+      const stations = data.map(s => {
+        // Beispiel-Annahme: geometry.coordinates vorhanden
+        const coords = s.geometry.coordinates;
+        const name = s.properties && s.properties.name ? s.properties.name : "Unbekannte Station";
+        return {
+          name: name,
+          lat: coords[1],
+          lon: coords[0],
+          dist: getDistance(WINT_LAT, WINT_LON, coords[1], coords[0])
         };
+      });
 
-        const stationen = data.map(s => ({
-          name: s.name,
-          lat: s.lat,
-          lon: s.lon,
-          dist: getDistance(WINT_LAT, WINT_LON, s.lat, s.lon)
-        }));
+      const nearest = stations.sort((a, b) => a.dist - b.dist).slice(0, 5);
 
-        const nearest = stationen
-          .sort((a, b) => a.dist - b.dist)
-          .slice(0, 5);
+      let html = `<ul class="list-group">`;
+      nearest.forEach(s => {
+        html += `<li class="list-group-item">📍 ${s.name} – ${s.dist.toFixed(2)} km</li>`;
+      });
+      html += `</ul>`;
 
-        let html = `<ul class="list-group">`;
-        nearest.forEach(s => {
-          html += `
-            <li class="list-group-item">
-              📍 ${s.name} – ${s.dist.toFixed(2)} km
-            </li>`;
-        });
-        html += `</ul>`;
-
-        $("#stationsResult").html(html);
-      },
-      error: function () {
-        $("#stationsResult").text("Fehler beim Laden der Ladestationen");
-      }
-    });
+      $("#stationsResult").html(html);
+    },
+    error: function () {
+      $("#stationsResult").text("Fehler beim Laden der Tankstellen-Daten");
+    }
   });
+});
 
   let map;
   $("#mapBtn").on("click", function () {
