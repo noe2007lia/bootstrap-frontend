@@ -63,12 +63,12 @@ $(document).ready(function () {
   const WINT_LAT = 47.4988;
   const WINT_LON = 8.7237;
 
- $("#stationsBtn").on("click", function () {
+$("#stationsBtn").on("click", function () {
   $.ajax({
     url: "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json",
     method: "GET",
     success: function (data) {
-      console.log("Erste Station:", data[0]);  // Debug-Ausgabe
+      console.log("Erstes Objekt Tankstelle:", data[0]);  // wichtig
 
       const getDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371;
@@ -82,9 +82,18 @@ $(document).ready(function () {
       };
 
       const stations = data.map(s => {
-        // Beispiel-Annahme: geometry.coordinates vorhanden
-        const coords = s.geometry.coordinates;
-        const name = s.properties && s.properties.name ? s.properties.name : "Unbekannte Station";
+        let coords = [0,0];
+        if (s.geometry && s.geometry.coordinates) {
+          coords = s.geometry.coordinates;
+        } else if (s.coordinates) {
+          coords = s.coordinates;
+        } else {
+          console.warn("Keine Koordinaten gefunden für: ", s);
+        }
+
+        const name = (s.properties && s.properties.name) ? s.properties.name :
+                     s.name ? s.name : "Unbekannte Station";
+
         return {
           name: name,
           lat: coords[1],
@@ -108,6 +117,7 @@ $(document).ready(function () {
     }
   });
 });
+
 
   let map;
   $("#mapBtn").on("click", function () {
