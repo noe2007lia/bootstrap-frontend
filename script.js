@@ -64,40 +64,58 @@ const WINT_LAT = 47.4988;
 const WINT_LON = 8.7237;
 
 
-$("#stationsBtn").on("click", function () {
+$(document).ready(function () {
+  const WINT_LAT = 47.4988;
+  const WINT_LON = 8.7237;
+
+  // Leaflet Karte initialisieren
+  const map = L.map('map').setView([WINT_LAT, WINT_LON], 13);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  // Marker für Winterthur
+  L.marker([WINT_LAT, WINT_LON]).addTo(map).bindPopup("Winterthur").openPopup();
+
+  // Funktion: Haversine-Distanz
+  function getDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 +
+              Math.cos(lat1*Math.PI/180) *
+              Math.cos(lat2*Math.PI/180) *
+              Math.sin(dLon/2)**2;
+    return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+  }
+
+  // JSON laden
   $.getJSON("https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json", function(data) {
-
-    // Distanzberechnung
-    const getDistance = (lat1, lon1, lat2, lon2) => {
-      const R = 6371;
-      const dLat = (lat2-lat1) * Math.PI/180;
-      const dLon = (lon2-lon1) * Math.PI/180;
-      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-      return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
-    };
-
-    // Alle Stationen mit Distanz berechnen
     const stations = data.map(s => {
-      const coords = s.geometry.coordinates; // [LON, LAT]
+      const coords = s.geometry.coordinates; // [lon, lat]
       const name = s.properties.name || "Unbekannte Station";
       const adresse = s.properties.adresse || "";
       const dist = getDistance(WINT_LAT, WINT_LON, coords[1], coords[0]);
       return { name, adresse, lat: coords[1], lon: coords[0], dist };
     });
 
-    // Sortieren & 5 nächste auswählen
-    const nearest = stations.sort((a,b) => a.dist - b.dist).slice(0,5);
+    const top5 = stations.sort((a,b) => a.dist - b.dist).slice(0,5);
 
-    // HTML erzeugen
-    let html = "<ul class='list-group'>";
-    nearest.forEach(s => {
-      html += `<li class="list-group-item">📍 ${s.name}, ${s.adresse} – ${s.dist.toFixed(2)} km</li>`;
+    // Liste anzeigen
+    let html = "";
+    top5.forEach(s => {
+      html += `<li class="list-group-item">
+                 <strong>Name:</strong> ${s.name}<br>
+                 <strong>Adresse:</strong> ${s.adresse}<br>
+                 <strong>Distanz:</strong> ${s.dist.toFixed(2)} km
+               </li>`;
+      // Marker auf Karte setzen
+      L.marker([s.lat, s.lon]).addTo(map).bindPopup(`${s.name}<br>${s.adresse}`);
     });
-    html += "</ul>";
-
-    $("#stationsResult").html(html);
+    $("#stationsList").html(html);
   });
 });
+
 
 
   let map;
