@@ -68,31 +68,37 @@ $("#stationsBtn").on("click", function () {
     url: "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json",
     method: "GET",
     success: function (data) {
-      console.log("Erstes Objekt Tankstelle:", data[0]);  // wichtig
+      console.log("Erste Station:", data[0]);  // Schau dir die Struktur in der Konsole an
 
       const getDistance = (lat1, lon1, lat2, lon2) => {
         const R = 6371;
         const dLat = (lat2 - lat1) * Math.PI / 180;
         const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat/2) ** 2 +
+        const a = Math.sin(dLat / 2) ** 2 +
                   Math.cos(lat1 * Math.PI / 180) *
                   Math.cos(lat2 * Math.PI / 180) *
-                  Math.sin(dLon/2) ** 2;
-        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+                  Math.sin(dLon / 2) ** 2;
+        return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
       };
 
       const stations = data.map(s => {
+        // Beispiel-Annahme bis du Struktur kennst:
         let coords = [0,0];
+        let name = "Unbekannte Station";
+
         if (s.geometry && s.geometry.coordinates) {
           coords = s.geometry.coordinates;
         } else if (s.coordinates) {
           coords = s.coordinates;
-        } else {
-          console.warn("Keine Koordinaten gefunden für: ", s);
         }
 
-        const name = (s.properties && s.properties.name) ? s.properties.name :
-                     s.name ? s.name : "Unbekannte Station";
+        if (s.attributes && s.attributes.NAME_STATION) {
+          name = s.attributes.NAME_STATION;
+        } else if (s.attributes && s.attributes.name) {
+          name = s.attributes.name;
+        } else if (s.properties && s.properties.name) {
+          name = s.properties.name;
+        }
 
         return {
           name: name,
@@ -102,7 +108,10 @@ $("#stationsBtn").on("click", function () {
         };
       });
 
-      const nearest = stations.sort((a, b) => a.dist - b.dist).slice(0, 5);
+      const nearest = stations
+        .filter(s => s.lat && s.lon)       // entferne Einträge ohne Koordinaten
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 5);
 
       let html = `<ul class="list-group">`;
       nearest.forEach(s => {
