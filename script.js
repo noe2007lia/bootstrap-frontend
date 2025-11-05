@@ -1,6 +1,23 @@
 $(document).ready(function () {
 
+  // -------------------------
+  // Konfiguration / Konstanten
+  // -------------------------
+  const LAT = 47.3769; // Zürich (für Wetter-Beispiel)
+  const LON = 8.5417;
 
+  const WINT_LAT = 47.4988; // Winterthur - Mittelpunkt für Ladestellen
+  const WINT_LON = 8.7237;
+
+  const DATA_URL = "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json";
+
+  // Globaler Leaflet map-Handle (eine Karte für alles)
+  let map = null;
+  let stationsLayer = null;
+
+  // -------------------------
+  // Katzenbild
+  // -------------------------
   $("#catBtn").on("click", function () {
     $.ajax({
       url: "https://api.thecatapi.com/v1/images/search",
@@ -16,6 +33,9 @@ $(document).ready(function () {
     });
   });
 
+  // -------------------------
+  // Bitcoin Preis
+  // -------------------------
   $("#btcBtn").on("click", function () {
     $.ajax({
       url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,chf",
@@ -35,9 +55,9 @@ $(document).ready(function () {
     });
   });
 
-  const LAT = 47.3769;
-  const LON = 8.5417;
-
+  // -------------------------
+  // Wetter (Open-Meteo)
+  // -------------------------
   $("#weatherBtn").on("click", function () {
     $.ajax({
       url: `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&forecast_days=1&timezone=Europe/Zurich`,
@@ -60,34 +80,44 @@ $(document).ready(function () {
     });
   });
 
-const WINT_LAT = 47.4988;
-const WINT_LON = 8.7237;
+  // -------------------------
+  // Helper: Map initialisieren (einmal)
+  // -------------------------
+  function ensureMap() {
+    if (map) return map;
 
+    map = L.map('mapResult').setView([WINT_LAT, WINT_LON], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
 
-// app.js
-$(function () {
-  // Koordinaten Winterthur (einmal deklarieren)
-  const WINT_LAT = 47.4988;
-  const WINT_LON = 8.7237;
+    stationsLayer = L.layerGroup().addTo(map);
 
-  // Daten-URL
-  const DATA_URL = "https://data.geo.admin.ch/ch.bfe.ladestellen-elektromobilitaet/data/ch.bfe.ladestellen-elektromobilitaet.json";
+    // Marker für Zentrum
+    L.marker([WINT_LAT, WINT_LON]).addTo(map).bindPopup("Winterthur (Zentrum)");
 
-  // Leaflet map initialisieren
-  const map = L.map('map', { center: [WINT_LAT, WINT_LON], zoom: 13, zoomControl: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
+    return map;
+  }
 
-  // Marker für Winterthur (Zentrum)
-  const wintMarker = L.marker([WINT_LAT, WINT_LON]).addTo(map).bindPopup("Winterthur (Stadtzentrum)").openPopup();
+  // -------------------------
+  // Stations-UI Elemente
+  // -------------------------
+  const $stationsContainer = $("#stationsContainer");
+  const $reloadBtn = $("#reloadBtn");
+  const $toggleMapBtn = $("#toggleMapBtn");
+  const $stationsBtn = $("#stationsBtn");
 
-  // LayerGroup für Stationen, damit wir sie löschen/neu setzen können
-  const stationsLayer = L.layerGroup().addTo(map);
+  function showLoading(msg = "Lade Daten...") {
+    $stationsContainer.html(`<div class="loading">${msg}</div>`);
+  }
+  function showError(msg = "Fehler") {
+    $stationsContainer.html(`<div class="alert alert-danger">${msg}</div>`);
+  }
 
   // Haversine Distanz (km)
   function haversineKm(lat1, lon1, lat2, lon2) {
-    const R = 6371; // Erdradius km
+    const R = 6371;
     const toRad = deg => deg * Math.PI / 180;
     const dLat = toRad(lat2 - lat1);
     const dLon = toRad(lon2 - lon1);
@@ -98,106 +128,110 @@ $(function () {
     return R * c;
   }
 
-  // UI Elemente
-  const $stationsContainer = $("#stationsContainer");
-  const $stationsLoading = $("#stationsLoading");
-  const $reloadBtn = $("#reloadBtn");
-  const $toggleMapBtn = $("#toggleMapBtn");
-
-  function showLoading(msg = "Lade Daten...") {
-    $stationsContainer.html(`<div class="loading" id="stationsLoading">${msg}</div>`);
-  }
-
-  function showError(msg = "Fehler beim Laden der Daten") {
-    $stationsContainer.html(`<div class="alert alert-danger">${msg}</div>`);
-  }
-
+  // -------------------------
+  // Lade Stationen & rendern
+  // -------------------------
   async function loadStationsAndRender() {
     try {
-      showLoading("Daten werden geladen, bitte warten...");
-      // fetch JSON
+      ensureMap();
+      showLoading("Lade Ladestellen...");
+
       const resp = await fetch(DATA_URL);
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
       const data = await resp.json();
 
-      if (!Array.isArray(data) || data.length === 0) {
-        showError("Keine Stationen in der Datei gefunden.");
+      // Robust: falls GeoJSON FeatureCollection -> features nutzen
+      let features = [];
+      if (Array.isArray(data)) {
+        features = data;
+      } else if (Array.isArray(data.features)) {
+        features = data.features;
+      } else if (Array.isArray(data.items)) {
+        features = data.items; // fallback
+      } else {
+        // Falls die Struktur anders ist, versuchen wir, das Objekt als Array zu interpretieren
+        showError("Unerwartete Datenstruktur von der API.");
+        console.error("Empfangene Daten:", data);
         return;
       }
 
-      // Mapée und Distanzberechnung
-      const stations = data.map(s => {
-        // Die JSON hat geometry.coordinates = [LON, LAT]
-        const coords = s.geometry && s.geometry.coordinates ? s.geometry.coordinates : [null, null];
-        const lon = Number(coords[0]);
-        const lat = Number(coords[1]);
-        const name = s.properties && (s.properties.name || s.properties.betreiber) ? (s.properties.name || s.properties.betreiber) : "Unbenannte Station";
-        const adresse = s.properties && (s.properties.adresse || s.properties.strasse || s.properties.ort) ? (s.properties.adresse || s.properties.strasse || s.properties.ort) : "";
-        const power = s.properties && s.properties.leistungkw ? s.properties.leistungkw : null;
-        const operator = s.properties && s.properties.betreiber ? s.properties.betreiber : "";
+      // Mappe Feature -> station
+      const stations = features.map(f => {
+        // GeoJSON kann als Feature mit geometry.coordinates [lon, lat]
+        let lon = null, lat = null;
+        if (f.geometry && Array.isArray(f.geometry.coordinates)) {
+          lon = Number(f.geometry.coordinates[0]);
+          lat = Number(f.geometry.coordinates[1]);
+        } else if (Array.isArray(f.coordinates)) {
+          lon = Number(f.coordinates[0]);
+          lat = Number(f.coordinates[1]);
+        } else if (f.properties && f.properties.longitude && f.properties.latitude) {
+          lon = Number(f.properties.longitude);
+          lat = Number(f.properties.latitude);
+        }
+
+        const props = f.properties || f;
+        const name = props.name || props.betreiber || "Unbenannte Station";
+        const adresse = props.adresse || props.strasse || props.ort || "";
+        const power = props.leistungkw || props.max_power || null;
+        const operator = props.betreiber || "";
+
         const dist = (isFinite(lat) && isFinite(lon)) ? haversineKm(WINT_LAT, WINT_LON, lat, lon) : Infinity;
-        return { name, adresse, lat, lon, dist, power, operator, raw: s };
+        return { name, adresse, lat, lon, dist, power, operator, raw: f };
       });
 
-      // Nur gültige Koordinaten behalten
-      const validStations = stations.filter(s => isFinite(s.dist));
-
+      const validStations = stations.filter(s => isFinite(s.dist) && s.lat !== null && s.lon !== null);
       if (validStations.length === 0) {
-        showError("Keine gültigen Koordinaten in den Daten gefunden.");
+        showError("Keine gültigen Stationen-Koordinaten gefunden.");
         return;
       }
 
-      // Sortieren & Top 5
-      const nearest = validStations.sort((a,b) => a.dist - b.dist).slice(0,5);
+      const nearest = validStations.sort((a,b) => a.dist - b.dist).slice(0, 5);
 
-      // Karte aktualisieren: entferne alte Marker
+      // Karte: alte Marker entfernen
       stationsLayer.clearLayers();
 
-      // Fit bounds auf Winterthur + gefundene Stationen
       const groupLatLngs = [[WINT_LAT, WINT_LON]];
-
-      // Erzeuge HTML Liste
       let html = '<ul class="list-group">';
       nearest.forEach((s, idx) => {
-        const label = `${s.name}`;
-        const addressLine = s.adresse ? `<div><strong>Adresse:</strong> ${s.adresse}</div>` : '';
-        const powerLine = s.power ? `<div><strong>Leistung:</strong> ${s.power} kW</div>` : '';
-        const operatorLine = s.operator ? `<div><strong>Betreiber:</strong> ${s.operator}</div>` : '';
         html += `
           <li class="list-group-item station-item" data-idx="${idx}">
-            <div><strong>${label}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small></div>
-            ${addressLine}
-            ${operatorLine}
-            ${powerLine}
+            <div><strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small></div>
+            ${s.adresse ? `<div><small>${s.adresse}</small></div>` : ''}
+            ${s.operator ? `<div><small>Betreiber: ${s.operator}</small></div>` : ''}
+            ${s.power ? `<div><small>Leistung: ${s.power} kW</small></div>` : ''}
           </li>
         `;
-        // Marker hinzufügen
-        const marker = L.marker([s.lat, s.lon]).bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ""}<br><small>${s.dist.toFixed(2)} km von Winterthur</small>`);
+        const marker = L.marker([s.lat, s.lon]).bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}<br><small>${s.dist.toFixed(2)} km von Winterthur</small>`);
         marker.addTo(stationsLayer);
         groupLatLngs.push([s.lat, s.lon]);
       });
       html += '</ul>';
-
       $stationsContainer.html(html);
 
-      // Bounds setzen, so dass alle Marker + Winterthur sichtbar sind
+      // Fit bounds
       const bounds = L.latLngBounds(groupLatLngs);
       map.fitBounds(bounds.pad(0.2));
 
-      // Klick auf Listeneintrag -> Popup auf Karte öffnen
+      // Klick auf Listeneintrag -> Popup öffnen
       $(".station-item").on("click", function () {
         const idx = Number($(this).attr("data-idx"));
         const s = nearest[idx];
         if (!s) return;
-        // find corresponding marker by position (inefficient but fine for 5)
+        // öffne passende Marker
+        let found = false;
         stationsLayer.eachLayer(layer => {
           const latlng = layer.getLatLng();
-          if (latlng.lat === s.lat && latlng.lng === s.lon) {
+          // Toleranz für float Vergleich
+          if (Math.abs(latlng.lat - s.lat) < 1e-6 && Math.abs(latlng.lng - s.lon) < 1e-6) {
             layer.openPopup();
-            // zentrieren leicht verschoben
             map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14), { animate: true });
+            found = true;
           }
         });
+        if (!found) {
+          console.warn("Marker nicht gefunden für station", s);
+        }
       });
 
     } catch (err) {
@@ -206,34 +240,28 @@ $(function () {
     }
   }
 
+  // -------------------------
   // Buttons
+  // -------------------------
+  $stationsBtn.on("click", function () {
+    loadStationsAndRender();
+  });
   $reloadBtn.on("click", function () {
     loadStationsAndRender();
   });
-
   $toggleMapBtn.on("click", function () {
-    $("#map").toggle();
-    // wenn sichtbar, invalidieren -> Leaflet neu rendern
-    if ($("#map").is(":visible")) {
+    $("#mapResult").toggle();
+    if ($("#mapResult").is(":visible") && map) {
       setTimeout(() => { map.invalidateSize(); }, 200);
     }
   });
 
-  // Automatisch beim Laden initial laden
-  loadStationsAndRender();
-});
-
-
-
-  let map;
+  // Karte optional per Klick anzeigen
   $("#mapBtn").on("click", function () {
-    if (!map) {
-      map = L.map('mapResult').setView([WINT_LAT, WINT_LON], 13);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
-      }).addTo(map);
-      L.marker([WINT_LAT, WINT_LON]).addTo(map);
-    }
+    ensureMap();
+    setTimeout(() => { map.invalidateSize(); }, 200);
   });
 
+  // Optional: beim ersten Laden automatisch die Karte vorbereiten
+  // ensureMap();
 });
