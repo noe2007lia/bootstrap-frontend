@@ -52,33 +52,19 @@
         </div>
       </div>
 
-      <!-- 4️⃣ E-Tankstellen -->
-      <div class="card mb-4">
-        <div class="card-body">
-          <h4 class="text-center">Nächste Strom-Tankstellen ⚡</h4>
-
-          <div class="d-flex justify-content-center gap-2 mb-3">
-            <button id="stationsBtn" class="btn btn-success">Tankstellen anzeigen</button>
-            <button id="reloadBtn" class="btn btn-outline-secondary">Neu laden</button>
-            <button id="toggleMapBtn" class="btn btn-outline-secondary">Karte ein/aus</button>
-          </div>
-
-          <!-- Container für Liste / Loading / Fehler -->
-          <div id="stationsContainer" class="mb-3"></div>
-
-          <!-- Karte für Stations (gleiche Karte wie Map-Feature) -->
-          <div id="mapResult" class="mt-3"></div>
-        </div>
-      </div>
-
-      <!-- 5️⃣ Karte (ein eigener Abschnitt, aber wir nutzen #mapResult oben) -->
-      <div class="card mb-4">
-        <div class="card-body text-center">
-          <h4>Karte 🗺️</h4>
-          <button id="mapBtn" class="btn btn-secondary mt-2">Karte anzeigen</button>
-          <div class="small text-muted mt-2">Die Karte benutzt die selbe Karte wie die Tankstellen.</div>
-        </div>
-      </div>
+<!-- 4️⃣ E-Tankstellen + Karte -->
+<div class="card mb-4">
+  <div class="card-body">
+    <h4 class="text-center">Nächste Strom-Tankstellen & Karte ⚡🗺️</h4>
+    <div class="d-flex justify-content-center gap-2 mb-3">
+      <button id="stationsBtn" class="btn btn-success">Tankstellen anzeigen</button>
+      <button id="reloadBtn" class="btn btn-outline-secondary">Neu laden</button>
+      <button id="toggleMapBtn" class="btn btn-outline-secondary">Karte ein/aus</button>
+    </div>
+    <div id="stationsContainer" class="mb-3"></div>
+    <div id="mapResult" class="mt-3"></div>
+  </div>
+</div>
 
     </div>
 
