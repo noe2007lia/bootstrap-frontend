@@ -128,110 +128,94 @@ $(document).ready(function () {
     return R * c;
   }
 
+  // -------------------------
+  // Lade Stationen & rendern (robust)
+  // -------------------------
+  async function loadStationsAndRender() {
+    try {
+      ensureMap();
+      showLoading("Lade Ladestellen...");
 
-// -------------------------
-// Lade Stationen & rendern (verbessert)
-// -------------------------
-async function loadStationsAndRender() {
-  try {
-    ensureMap();
-    showLoading("Lade Ladestellen...");
+      const resp = await fetch(DATA_URL);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const data = await resp.json();
 
-    const resp = await fetch(DATA_URL);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
-
-    // Struktur‐Robust: finde Array mit Stationen
-    let features = null;
-    if (Array.isArray(data)) {
-      features = data;
-    } else if (Array.isArray(data.features)) {
-      features = data.features;
-    } else if (Array.isArray(data.items)) {
-      features = data.items;
-    } else if (Array.isArray(data.data)) {
-      features = data.data;
-    } else {
-      showError("Unerwartete Datenstruktur von der API.");
-      console.error("Empfangene Daten:", data);
-      return;
-    }
-
-    const stations = features.map(f => {
-      let lon = null, lat = null;
-      if (f.geometry && Array.isArray(f.geometry.coordinates)) {
-        lon = Number(f.geometry.coordinates[0]);
-        lat = Number(f.geometry.coordinates[1]);
-      } else if (f.coordinates && Array.isArray(f.coordinates)) {
-        lon = Number(f.coordinates[0]);
-        lat = Number(f.coordinates[1]);
-      } else if (f.properties && f.properties.longitude && f.properties.latitude) {
-        lon = Number(f.properties.longitude);
-        lat = Number(f.properties.latitude);
+      // --- Robuste Strukturprüfung ---
+      let features = null;
+      if (data && Array.isArray(data.features)) {
+        features = data.features;
+      } else if (Array.isArray(data)) {
+        features = data;
+      } else {
+        showError("Unerwartete Datenstruktur von der API.");
+        console.error("Empfangene Daten:", data);
+        return;
       }
 
-      const props = f.properties || f;
-      const name = props.name || props.betreiber || "Unbenannte Station";
-      const adresse = props.adresse || props.strasse || props.ort || "";
-      const power = props.leistungkw || props.max_power || null;
-      const operator = props.betreiber || "";
+      // --- Stations-Mapping ---
+      const stations = features.map(f => {
+        const coords = f.geometry?.coordinates;
+        const lat = coords ? Number(coords[1]) : null;
+        const lon = coords ? Number(coords[0]) : null;
+        const props = f.properties || {};
+        const name = props.name || props.betreiber || "Unbenannte Station";
+        const adresse = props.adresse || props.strasse || props.ort || "";
+        const power = props.leistungkw || null;
+        const operator = props.betreiber || "";
+        const dist = (lat && lon) ? haversineKm(WINT_LAT, WINT_LON, lat, lon) : Infinity;
 
-      const dist = (isFinite(lat) && isFinite(lon))
-        ? haversineKm(WINT_LAT, WINT_LON, lat, lon)
-        : Infinity;
-
-      return { name, adresse, lat, lon, dist, power, operator };
-    });
-
-    const validStations = stations.filter(s => isFinite(s.dist) && s.lat !== null && s.lon !== null);
-    if (validStations.length === 0) {
-      showError("Keine gültigen Stationen‐Koordinaten gefunden.");
-      return;
-    }
-    const nearest = validStations.sort((a,b) => a.dist - b.dist).slice(0,5);
-
-    stationsLayer.clearLayers();
-    const groupLatLngs = [[WINT_LAT, WINT_LON]];
-    let html = '<ul class="list-group">';
-    nearest.forEach((s, idx) => {
-      html += `
-        <li class="list-group-item station-item" data-idx="${idx}">
-          <div><strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small></div>
-          ${s.adresse ? `<div><small>${s.adresse}</small></div>` : ''}
-          ${s.operator ? `<div><small>Betreiber: ${s.operator}</small></div>` : ''}
-          ${s.power ? `<div><small>Leistung: ${s.power} kW</small></div>` : ''}
-        </li>
-      `;
-      const marker = L.marker([s.lat, s.lon])
-        .bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}<br><small>${s.dist.toFixed(2)} km von Winterthur</small>`);
-      marker.addTo(stationsLayer);
-      groupLatLngs.push([s.lat, s.lon]);
-    });
-    html += '</ul>';
-    $stationsContainer.html(html);
-
-    const bounds = L.latLngBounds(groupLatLngs);
-    map.fitBounds(bounds.pad(0.2));
-
-    $(".station-item").on("click", function () {
-      const idx = Number($(this).attr("data-idx"));
-      const s = nearest[idx];
-      if (!s) return;
-      stationsLayer.eachLayer(layer => {
-        const latlng = layer.getLatLng();
-        if (Math.abs(latlng.lat - s.lat) < 1e-6 && Math.abs(latlng.lng - s.lon) < 1e-6) {
-          layer.openPopup();
-          map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14), { animate: true });
-        }
+        return { name, adresse, lat, lon, dist, power, operator };
       });
-    });
 
-  } catch (err) {
-    console.error(err);
-    showError("Fehler beim Laden/Verarbeiten der Daten: " + err.message);
+      const validStations = stations.filter(s => isFinite(s.dist) && s.lat !== null && s.lon !== null);
+      if (validStations.length === 0) {
+        showError("Keine gültigen Stationen‑Koordinaten gefunden.");
+        return;
+      }
+
+      const nearest = validStations.sort((a,b) => a.dist - b.dist).slice(0,5);
+
+      stationsLayer.clearLayers();
+      const groupLatLngs = [[WINT_LAT, WINT_LON]];
+      let html = '<ul class="list-group">';
+      nearest.forEach((s, idx) => {
+        html += `
+          <li class="list-group-item station-item" data-idx="${idx}">
+            <div><strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small></div>
+            ${s.adresse ? `<div><small>${s.adresse}</small></div>` : ''}
+            ${s.operator ? `<div><small>Betreiber: ${s.operator}</small></div>` : ''}
+            ${s.power ? `<div><small>Leistung: ${s.power} kW</small></div>` : ''}
+          </li>
+        `;
+        const marker = L.marker([s.lat, s.lon])
+          .bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}<br><small>${s.dist.toFixed(2)} km von Winterthur</small>`);
+        marker.addTo(stationsLayer);
+        groupLatLngs.push([s.lat, s.lon]);
+      });
+      html += '</ul>';
+      $stationsContainer.html(html);
+
+      const bounds = L.latLngBounds(groupLatLngs);
+      map.fitBounds(bounds.pad(0.2));
+
+      $(".station-item").on("click", function () {
+        const idx = Number($(this).attr("data-idx"));
+        const s = nearest[idx];
+        if (!s) return;
+        stationsLayer.eachLayer(layer => {
+          const latlng = layer.getLatLng();
+          if (Math.abs(latlng.lat - s.lat) < 1e-6 && Math.abs(latlng.lng - s.lon) < 1e-6) {
+            layer.openPopup();
+            map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14), { animate: true });
+          }
+        });
+      });
+
+    } catch (err) {
+      console.error(err);
+      showError("Fehler beim Laden/Verarbeiten der Daten: " + err.message);
+    }
   }
-}
-
 
   // -------------------------
   // Buttons
@@ -255,6 +239,4 @@ async function loadStationsAndRender() {
     setTimeout(() => { map.invalidateSize(); }, 200);
   });
 
-  // Optional: beim ersten Laden automatisch die Karte vorbereiten
-  // ensureMap();
 });
