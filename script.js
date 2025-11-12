@@ -128,8 +128,8 @@ $(document).ready(function () {
     return R * c;
   }
 
- // -------------------------
-// Lade Stationen & rendern (robust + debug)
+// -------------------------
+// Lade Stationen & rendern (robustere Koordinaten-Extraktion)
 // -------------------------
 async function loadStationsAndRender() {
   try {
@@ -137,36 +137,31 @@ async function loadStationsAndRender() {
     showLoading("Lade Ladestellen...");
 
     const resp = await fetch(DATA_URL, { method: 'GET' });
-    // 1) Netzwerkstatus prüfen
     if (!resp.ok) {
-      const txt = await resp.text().catch(()=>"<keine textantwort>");
-      console.error("Netzwerkfehler beim Abruf der API:", resp.status, resp.statusText, "Antwort-Text (gekürzt):", txt.slice(0,500));
+      const txt = await resp.text().catch(() => "<keine textantwort>");
+      console.error("Netzwerkfehler beim Abruf der API:", resp.status, resp.statusText, "Antwort-Text (gekürzt):", txt.slice(0, 500));
       showError(`Netzwerkfehler: ${resp.status} ${resp.statusText}. Prüfe URL / CORS.`);
       return;
     }
-
-    // 2) Content-Type prüfen
+    
     const ctype = resp.headers.get('content-type') || "";
     const bodyText = await resp.text();
 
-    // Falls die API HTML oder Text zurückliefert -> Fehler (häufiger bei CORS / Proxy / 400)
     if (!/application\/json|text\/json|geo\+json/i.test(ctype) && !bodyText.trim().startsWith("{") && !bodyText.trim().startsWith("[")) {
-      console.error("Unerwarteter Content-Type oder Body (kein JSON):", ctype, bodyText.slice(0,1000));
+      console.error("Unerwarteter Content-Type oder Body (kein JSON):", ctype, bodyText.slice(0, 1000));
       showError("Die API liefert kein JSON (oder CORS blockiert die Anfrage). Öffne die DevTools -> Network, um die Antwort zu prüfen.");
       return;
     }
 
-    // 3) JSON parse sicher versuchen, mit Fehlerprotokoll
     let data;
     try {
       data = JSON.parse(bodyText);
     } catch (e) {
-      console.error("Fehler beim Parsen des JSON-Texts:", e, "Rohantwort (gekürzt):", bodyText.slice(0,1000));
+      console.error("Fehler beim Parsen des JSON-Texts:", e, "Rohantwort (gekürzt):", bodyText.slice(0, 1000));
       showError("Fehler: Antwort kann nicht als JSON geparst werden.");
       return;
     }
 
-    // 4) Robust: finde irgendein Array mit Einträgen im Objekt (first-array fallback)
     function findFirstArray(obj, visited = new Set()) {
       if (!obj || typeof obj !== 'object') return null;
       if (visited.has(obj)) return null;
@@ -180,14 +175,11 @@ async function loadStationsAndRender() {
             const found = findFirstArray(val, visited);
             if (found) return found;
           }
-        } catch (err) {
-          // ignore
-        }
+        } catch (err) {}
       }
       return null;
     }
 
-    // Nutze zuerst data.features falls vorhanden, sonst fallback auf erstes Array im Objekt
     let features = null;
     if (data && Array.isArray(data.features) && data.features.length > 0) {
       features = data.features;
@@ -203,60 +195,95 @@ async function loadStationsAndRender() {
       return;
     }
 
-    // 5) Mapping der Stationen (wie zuvor), aber defensiv
-    const stations = features.map(f => {
-      // GeoJSON Feature: geometry.coordinates = [lon, lat]
-      let lon = null, lat = null;
-      if (f && f.geometry && Array.isArray(f.geometry.coordinates)) {
-        lon = Number(f.geometry.coordinates[0]);
-        lat = Number(f.geometry.coordinates[1]);
-      } else if (Array.isArray(f.coordinates)) {
-        lon = Number(f.coordinates[0]);
-        lat = Number(f.coordinates[1]);
-      } else if (f.properties && (f.properties.longitude || f.properties.lat || f.properties.lat_deg)) {
-        // Falls API andere property names hat
-        lon = Number(f.properties.longitude || f.properties.lon || f.properties.lng || f.properties.x);
-        lat = Number(f.properties.latitude || f.properties.lat || f.properties.y);
-      } else if (f.lon && f.lat) {
-        lon = Number(f.lon);
-        lat = Number(f.lat);
+    function tryNumber(v) {
+      if (v === null || v === undefined) return null;
+      if (typeof v === 'string') {
+        v = v.trim().replace(',', '.');
+      }
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    }
+
+    function plausibleLat(l) { return typeof l === 'number' && l >= 43 && l <= 49; }
+    function plausibleLon(l) { return typeof l === 'number' && l >= 5 && l <= 12; }
+
+    function extractCoords(obj) {
+      if (!obj || typeof obj !== 'object') return null;
+
+      const geom = obj.geometry || obj;
+      if (geom && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+        let a = tryNumber(geom.coordinates[0]);
+        let b = tryNumber(geom.coordinates[1]);
+        if (a !== null && b !== null) {
+          if (plausibleLat(b) && plausibleLon(a)) return { lat: b, lon: a };
+          if (plausibleLat(a) && plausibleLon(b)) return { lat: a, lon: b };
+        }
       }
 
+      const props = obj.properties || obj;
+      const maybe = [
+        ['latitude','longitude'],
+        ['lat','lon'],
+        ['lat','lng'],
+        ['y','x'],
+        ['coord_y','coord_x'],
+      ];
+      for (const [la, lo] of maybe) {
+        const L = tryNumber(props[la]);
+        const O = tryNumber(props[lo]);
+        if (L !== null && O !== null) {
+          if (plausibleLat(L) && plausibleLon(O)) return { lat: L, lon: O };
+          if (plausibleLat(O) && plausibleLon(L)) return { lat: O, lon: L };
+        }
+      }
+
+      const direct = ['lat','lon','lng','latitude','longitude','x','y'];
+      const candidateLat = tryNumber(obj.lat ?? obj.latitude ?? obj.y ?? null);
+      const candidateLon = tryNumber(obj.lon ?? obj.longitude ?? obj.x ?? obj.lng ?? null);
+      if (candidateLat !== null && candidateLon !== null) {
+        if (plausibleLat(candidateLat) && plausibleLon(candidateLon)) return { lat: candidateLat, lon: candidateLon };
+        if (plausibleLat(candidateLon) && plausibleLon(candidateLat)) return { lat: candidateLon, lon: candidateLat };
+      }
+
+      return null;
+    }
+
+    const stations = features.map(f => {
+      const coords = extractCoords(f);
+      const lat = coords ? coords.lat : null;
+      const lon = coords ? coords.lon : null;
       const props = f.properties || f;
       const name = props.name || props.betreiber || props.label || props.title || "Unbenannte Station";
       const adresse = props.adresse || props.strasse || props.ort || props.address || "";
-      const power = props.leistungkw || props.max_power || props.power || null;
       const operator = props.betreiber || props.operator || "";
-
+      const power = props.leistungkw || props.max_power || props.power || "";
       const dist = (isFinite(lat) && isFinite(lon)) ? haversineKm(WINT_LAT, WINT_LON, lat, lon) : Infinity;
       return { name, adresse, lat, lon, dist, power, operator };
     });
 
-    const validStations = stations.filter(s => isFinite(s.dist) && s.lat !== null && s.lon !== null);
+    const validStations = stations.filter(s => isFinite(s.dist) && s.lat && s.lon);
     if (validStations.length === 0) {
-      console.error("Stations-Array gefunden, aber keine gültigen Koordinaten extrahiert. Beispiele (erste 5):", stations.slice(0,5));
+      console.error("Stations gefunden, aber keine gültigen Koordinaten:", features.slice(0, 10));
       showError("Es wurden Einträge gefunden, aber keine gültigen Koordinaten. Prüfe die Struktur der API-Antwort in der Konsole.");
       return;
     }
 
-    const nearest = validStations.sort((a,b) => a.dist - b.dist).slice(0,5);
-
-    // Rendern wie gehabt
+    const nearest = validStations.sort((a, b) => a.dist - b.dist).slice(0, 5);
     stationsLayer.clearLayers();
     const groupLatLngs = [[WINT_LAT, WINT_LON]];
+
     let html = '<ul class="list-group">';
     nearest.forEach((s, idx) => {
       html += `
         <li class="list-group-item station-item" data-idx="${idx}">
-          <div><strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small></div>
-          ${s.adresse ? `<div><small>${s.adresse}</small></div>` : ''}
-          ${s.operator ? `<div><small>Betreiber: ${s.operator}</small></div>` : ''}
-          ${s.power ? `<div><small>Leistung: ${s.power} kW</small></div>` : ''}
-        </li>
-      `;
-      const marker = L.marker([s.lat, s.lon])
-        .bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}<br><small>${s.dist.toFixed(2)} km von Winterthur</small>`);
-      marker.addTo(stationsLayer);
+          <strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small><br>
+          ${s.adresse ? `${s.adresse}<br>` : ''}
+          ${s.operator ? `<small>Betreiber: ${s.operator}</small><br>` : ''}
+          ${s.power ? `<small>Leistung: ${s.power} kW</small>` : ''}
+        </li>`;
+      L.marker([s.lat, s.lon])
+        .bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}`)
+        .addTo(stationsLayer);
       groupLatLngs.push([s.lat, s.lon]);
     });
     html += '</ul>';
@@ -266,14 +293,14 @@ async function loadStationsAndRender() {
     map.fitBounds(bounds.pad(0.2));
 
     $(".station-item").on("click", function () {
-      const idx = Number($(this).attr("data-idx"));
+      const idx = $(this).data("idx");
       const s = nearest[idx];
       if (!s) return;
       stationsLayer.eachLayer(layer => {
         const latlng = layer.getLatLng();
         if (Math.abs(latlng.lat - s.lat) < 1e-6 && Math.abs(latlng.lng - s.lon) < 1e-6) {
           layer.openPopup();
-          map.setView([s.lat, s.lon], Math.max(map.getZoom(), 14), { animate: true });
+          map.setView([s.lat, s.lon], 14, { animate: true });
         }
       });
     });
@@ -283,6 +310,7 @@ async function loadStationsAndRender() {
     showError("Fehler beim Laden/Verarbeiten der Daten: " + err.message);
   }
 }
+
 
 
   // -------------------------
