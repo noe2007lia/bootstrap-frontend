@@ -129,7 +129,7 @@ $(document).ready(function () {
   }
 
 // -------------------------
-// Lade Stationen & rendern (robustere Koordinaten-Extraktion)
+// Lade Stationen & rendern (robust + Fallback + optionales Geocoding)
 // -------------------------
 async function loadStationsAndRender() {
   try {
@@ -143,7 +143,7 @@ async function loadStationsAndRender() {
       showError(`Netzwerkfehler: ${resp.status} ${resp.statusText}. Prüfe URL / CORS.`);
       return;
     }
-    
+
     const ctype = resp.headers.get('content-type') || "";
     const bodyText = await resp.text();
 
@@ -162,6 +162,7 @@ async function loadStationsAndRender() {
       return;
     }
 
+    // find array of features (robust)
     function findFirstArray(obj, visited = new Set()) {
       if (!obj || typeof obj !== 'object') return null;
       if (visited.has(obj)) return null;
@@ -195,11 +196,10 @@ async function loadStationsAndRender() {
       return;
     }
 
+    // robuste Koordinaten-Extraktion (vereinfacht)
     function tryNumber(v) {
       if (v === null || v === undefined) return null;
-      if (typeof v === 'string') {
-        v = v.trim().replace(',', '.');
-      }
+      if (typeof v === 'string') v = v.trim().replace(',', '.');
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     }
@@ -207,109 +207,74 @@ async function loadStationsAndRender() {
     function plausibleLat(l) { return typeof l === 'number' && l >= 43 && l <= 49; }
     function plausibleLon(l) { return typeof l === 'number' && l >= 5 && l <= 12; }
 
-    function extractCoords(obj) {
-      if (!obj || typeof obj !== 'object') return null;
 
-      const geom = obj.geometry || obj;
-      if (geom && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
-        let a = tryNumber(geom.coordinates[0]);
-        let b = tryNumber(geom.coordinates[1]);
-        if (a !== null && b !== null) {
-          if (plausibleLat(b) && plausibleLon(a)) return { lat: b, lon: a };
-          if (plausibleLat(a) && plausibleLon(b)) return { lat: a, lon: b };
-        }
-      }
+    // Stations-Daten extrahieren & sortierenfunction extractCoords(obj) {
+  if (!obj || typeof obj !== 'object') return null;
 
-      const props = obj.properties || obj;
-      const maybe = [
-        ['latitude','longitude'],
-        ['lat','lon'],
-        ['lat','lng'],
-        ['y','x'],
-        ['coord_y','coord_x'],
-      ];
-      for (const [la, lo] of maybe) {
-        const L = tryNumber(props[la]);
-        const O = tryNumber(props[lo]);
-        if (L !== null && O !== null) {
-          if (plausibleLat(L) && plausibleLon(O)) return { lat: L, lon: O };
-          if (plausibleLat(O) && plausibleLon(L)) return { lat: O, lon: L };
-        }
-      }
-
-      const direct = ['lat','lon','lng','latitude','longitude','x','y'];
-      const candidateLat = tryNumber(obj.lat ?? obj.latitude ?? obj.y ?? null);
-      const candidateLon = tryNumber(obj.lon ?? obj.longitude ?? obj.x ?? obj.lng ?? null);
-      if (candidateLat !== null && candidateLon !== null) {
-        if (plausibleLat(candidateLat) && plausibleLon(candidateLon)) return { lat: candidateLat, lon: candidateLon };
-        if (plausibleLat(candidateLon) && plausibleLon(candidateLat)) return { lat: candidateLon, lon: candidateLat };
-      }
-
-      return null;
+  // 1) GeoJSON geometry.coordinates
+  const geom = obj.geometry || obj;
+  if (geom && Array.isArray(geom.coordinates) && geom.coordinates.length >= 2) {
+    let a = tryNumber(geom.coordinates[0]);
+    let b = tryNumber(geom.coordinates[1]);
+    if (a !== null && b !== null) {
+      if (plausibleLat(b) && plausibleLon(a)) return { lat: b, lon: a };
+      if (plausibleLat(a) && plausibleLon(b)) return { lat: a, lon: b };
     }
-
-    const stations = features.map(f => {
-      const coords = extractCoords(f);
-      const lat = coords ? coords.lat : null;
-      const lon = coords ? coords.lon : null;
-      const props = f.properties || f;
-      const name = props.name || props.betreiber || props.label || props.title || "Unbenannte Station";
-      const adresse = props.adresse || props.strasse || props.ort || props.address || "";
-      const operator = props.betreiber || props.operator || "";
-      const power = props.leistungkw || props.max_power || props.power || "";
-      const dist = (isFinite(lat) && isFinite(lon)) ? haversineKm(WINT_LAT, WINT_LON, lat, lon) : Infinity;
-      return { name, adresse, lat, lon, dist, power, operator };
-    });
-
-    const validStations = stations.filter(s => isFinite(s.dist) && s.lat && s.lon);
-    if (validStations.length === 0) {
-      console.error("Stations gefunden, aber keine gültigen Koordinaten:", features.slice(0, 10));
-      showError("Es wurden Einträge gefunden, aber keine gültigen Koordinaten. Prüfe die Struktur der API-Antwort in der Konsole.");
-      return;
-    }
-
-    const nearest = validStations.sort((a, b) => a.dist - b.dist).slice(0, 5);
-    stationsLayer.clearLayers();
-    const groupLatLngs = [[WINT_LAT, WINT_LON]];
-
-    let html = '<ul class="list-group">';
-    nearest.forEach((s, idx) => {
-      html += `
-        <li class="list-group-item station-item" data-idx="${idx}">
-          <strong>${s.name}</strong> <small class="text-muted">(${s.dist.toFixed(2)} km)</small><br>
-          ${s.adresse ? `${s.adresse}<br>` : ''}
-          ${s.operator ? `<small>Betreiber: ${s.operator}</small><br>` : ''}
-          ${s.power ? `<small>Leistung: ${s.power} kW</small>` : ''}
-        </li>`;
-      L.marker([s.lat, s.lon])
-        .bindPopup(`<strong>${s.name}</strong><br>${s.adresse || ''}`)
-        .addTo(stationsLayer);
-      groupLatLngs.push([s.lat, s.lon]);
-    });
-    html += '</ul>';
-    $stationsContainer.html(html);
-
-    const bounds = L.latLngBounds(groupLatLngs);
-    map.fitBounds(bounds.pad(0.2));
-
-    $(".station-item").on("click", function () {
-      const idx = $(this).data("idx");
-      const s = nearest[idx];
-      if (!s) return;
-      stationsLayer.eachLayer(layer => {
-        const latlng = layer.getLatLng();
-        if (Math.abs(latlng.lat - s.lat) < 1e-6 && Math.abs(latlng.lng - s.lon) < 1e-6) {
-          layer.openPopup();
-          map.setView([s.lat, s.lon], 14, { animate: true });
-        }
-      });
-    });
-
-  } catch (err) {
-    console.error(err);
-    showError("Fehler beim Laden/Verarbeiten der Daten: " + err.message);
   }
+
+  // 2) properties with lat/lon names
+  const props = obj.properties || obj;
+  const maybe = [
+    ['latitude','longitude'],
+    ['lat','lon'],
+    ['lat','lng'],
+    ['y','x'],
+    ['coord_y','coord_x'],
+  ];
+  for (const [la, lo] of maybe) {
+    const L = tryNumber(props[la]);
+    const O = tryNumber(props[lo]);
+    if (L !== null && O !== null) {
+      if (plausibleLat(L) && plausibleLon(O)) return { lat: L, lon: O };
+      if (plausibleLat(O) && plausibleLon(L)) return { lat: O, lon: L };
+    }
+  }
+
+  // 3) direct fields
+  const candidateLat = tryNumber(obj.lat ?? obj.latitude ?? obj.y ?? null);
+  const candidateLon = tryNumber(obj.lon ?? obj.longitude ?? obj.x ?? obj.lng ?? null);
+  if (plausibleLat(candidateLat) && plausibleLon(candidateLon))
+    return { lat: candidateLat, lon: candidateLon };
+  if (plausibleLat(candidateLon) && plausibleLon(candidateLat))
+    return { lat: candidateLon, lon: candidateLat };
+
+  return null;
 }
+
+ catch (err) {
+    console.error("Fehler beim Laden/Verarbeiten der Stationen:", err);
+    showError("Fehler beim Laden der Ladestellen. Schau in die Konsole.");
+}
+    const stations = features.map(f => {
+  const coords = extractCoords(f);
+  const lat = coords?.lat ?? null;
+  const lon = coords?.lon ?? null;
+  const props = f.properties || f;
+  const name = props.name || props.betreiber || "Unbenannte Station";
+  const adresse = props.adresse || props.strasse || props.ort || "";
+  const power = props.leistungkw || props.max_power || null;
+  const operator = props.betreiber || "";
+
+  const dist = (lat !== null && lon !== null)
+    ? haversineKm(WINT_LAT, WINT_LON, lat, lon)
+    : Infinity;
+
+  return { name, adresse, lat, lon, dist, power, operator };
+
+  
+});
+
+
 
 
 
