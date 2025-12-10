@@ -1,21 +1,14 @@
-:root {
-  --bs-body-bg: #ffb5f3;
-  --bs-card-bg: #ffffff;
-  --bs-primary: #0d6efd;
-  --bs-success: #198754;
-  --bs-info: #0dcaf0;
-  --bs-warning: #ffc107;
-  --bs-secondary: #6c757d;
-  --bs-border-radius: .5rem;
-  --bs-box-shadow: 0 .125rem .25rem rgba(0,0,0,.075);
-}
-
 body {
-  background-color: var(--bs-body-bg);
+  background: #f5f5f5;
 }
 
-.card {
-  background-color: var(--bs-card-bg);
-  border-radius: var(--bs-border-radius);
-  box-shadow: var(--bs-box-shadow);
+#catResult img {
+  max-width: 300px;
+  margin-top: 10px;
+}
+
+#map {
+  height: 400px;
+  margin-top: 15px;
+  border-radius: 10px;
 }
