@@ -1,107 +1,150 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>APIs & Map – Komplett (app.js Demo)</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Info Website 2025 – Komplett</title>
 
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Bootstrap -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+/* === GLOBAL === */
+body {
+  background:#050814;
+  color:#e5f1ff;
+}
+section[data-page] { display:none; }
+section.active { display:block; }
 
-  <!-- Highcharts -->
-  <script src="https://code.highcharts.com/highcharts.js"></script>
-
-  <!-- eigene Styles -->
-  <link rel="stylesheet" href="styles.css">
+/* optional spacing */
+main { padding-top:3rem; padding-bottom:4rem; }
+</style>
 </head>
+
 <body>
 
-<nav class="navbar navbar-dark bg-dark">
-  <div class="container-fluid">
-    <span class="navbar-brand mb-0 h1">APIs & Map – Demo</span>
+<!-- NAVBAR -->
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" href="#" data-nav="home">Info Website 2025</a>
+    <button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#mainNav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav ms-auto">
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="btc">BTC</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="cat">Katze</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="ev">Strom</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="map">Lieblings-Ort</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="bewerbung">Bewerbung</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" data-nav="datenschutz">Datenschutz</a></li>
+      </ul>
+    </div>
   </div>
 </nav>
 
-<main class="container py-4">
+<main class="container">
 
-  <div class="row g-4">
+<!-- HOME -->
+<section data-page="home" class="active text-center">
+  <h1 class="display-6 fw-bold mt-5">👋 Willkommen</h1>
+  <p class="text-muted">Wähle oben eine Funktion aus.</p>
+</section>
 
-    <!-- LEFT: Controls -->
-    <div class="col-lg-5">
-
-      <!-- Katzenbild -->
-      <section class="mb-4 p-3 shadow-sm bg-white rounded">
-        <h5>🟢 a) Zufälliges Katzenbild</h5>
-        <button id="catBtn" class="btn btn-sm btn-primary">Katze laden</button>
-        <div id="catResult" class="mt-3"></div>
-      </section>
-
-      <!-- Bitcoin -->
-      <section class="mb-4 p-3 shadow-sm bg-white rounded">
-        <h5>🟡 b) Bitcoin-Preis</h5>
-        <button id="btcBtn" class="btn btn-sm btn-warning">Preis laden</button>
-        <div id="btcResult" class="mt-3"></div>
-      </section>
-
-      <!-- Wetter -->
-      <section class="mb-4 p-3 shadow-sm bg-white rounded">
-        <h5>🔵 c) Wetter für Zürich (5 Tage)</h5>
-        <p class="small text-muted">Koordinaten im Code: LAT / LON</p>
-        <button id="weatherBtn" class="btn btn-sm btn-info">Wetter laden & Chart anzeigen</button>
-        <div id="weatherResult" class="mt-3"></div>
-        <div id="weatherChart" class="mt-3" style="min-height:250px;"></div>
-      </section>
-
-      <!-- Tankstellen -->
-      <section class="mb-4 p-3 shadow-sm bg-white rounded">
-        <h5>⚡ d) Nächste 5 E-Ladestationen (ab Winterthur)</h5>
-
-        <div class="mb-2">
-          <button id="stationsBtn" class="btn btn-sm btn-success">Ladestationen laden</button>
-          <button id="reloadStationsBtn" class="btn btn-sm btn-outline-secondary">Neu laden</button>
-        </div>
-
-        <div class="input-group mb-2">
-          <input id="plzInput" class="form-control form-control-sm" placeholder="PLZ (z. B. 8400) oder Ort eingeben">
-          <button id="plzSearchBtn" class="btn btn-sm btn-outline-primary">Suche PLZ / Ort</button>
-        </div>
-
-        <div id="stationsList" class="list-group"></div>
-      </section>
-
-      <!-- Map controls -->
-      <section class="mb-4 p-3 shadow-sm bg-white rounded">
-        <h5>🗺️ e) Karte</h5>
-        <p class="small text-muted">Zentriert wird initial auf: Pionierstrasse 28, Winterthur (geokodiert)</p>
-
-        <div class="input-group mb-2">
-          <input id="placeInput" class="form-control form-control-sm" placeholder="Ort eingeben (z. B. Zürich)">
-          <button id="placeSearchBtn" class="btn btn-sm btn-outline-info">Suchen & zentrieren</button>
-        </div>
-
-        <div class="form-text small text-muted">
-          Klicke in der Stationen-Liste auf eine Station, um die Karte dorthin zu zentrieren.
-        </div>
-      </section>
-
-    </div>
-
-    <!-- RIGHT: Map -->
-    <div class="col-lg-7">
-      <div id="map" class="shadow-sm rounded"></div>
-    </div>
+<!-- BTC -->
+<section data-page="btc">
+  <h1 class="display-6 fw-bold mb-3 text-center">💰 BTC Kurs</h1>
+  <div class="text-center mb-3">
+    <button id="btnBtc" class="btn btn-warning">BTC laden</button>
   </div>
+  <div id="btcResult" class="text-center text-muted">—</div>
+</section>
+
+<!-- KATZE -->
+<section data-page="cat">
+  <h1 class="display-6 fw-bold mb-3 text-center">🐾 Katze</h1>
+  <div class="text-center mb-3">
+    <button id="btnCat" class="btn btn-primary">Katze anzeigen</button>
+  </div>
+  <div id="catResult" class="text-center text-muted">—</div>
+</section>
+
+<!-- EV -->
+<section data-page="ev">
+  <h1 class="display-6 fw-bold mb-3 text-center">🔌 Strom-Tankstellen</h1>
+  <button id="btnEv" class="btn btn-info mb-3">Top 5 Winterthur</button>
+  <ol id="evList"></ol>
+</section>
+
+<!-- MAP -->
+<section data-page="map">
+  <h1 class="display-6 fw-bold mb-3 text-center">📍 Lieblings-Ort</h1>
+  <button id="btnMap" class="btn btn-success mb-3">Karte anzeigen</button>
+  <div id="mapBox" style="height:400px;" class="border rounded"></div>
+</section>
+
+<!-- BEWERBUNG (gekürzt eingebettet – Logik bleibt) -->
+<section data-page="bewerbung">
+  <h1 class="display-6 fw-bold mb-3 text-center">✉️ Bewerbung</h1>
+  <form class="needs-validation" novalidate>
+    <input class="form-control mb-2" placeholder="Vorname" required>
+    <input class="form-control mb-2" placeholder="Nachname" required>
+    <button class="btn btn-primary">Absenden</button>
+  </form>
+</section>
+
+<!-- DATENSCHUTZ -->
+<section data-page="datenschutz">
+  <h1 class="display-6 fw-bold mb-3 text-center">🔐 Datenschutz</h1>
+  <p>Diese Seite dient nur zu Demonstrationszwecken.</p>
+</section>
+
 </main>
 
-<!-- jQuery -->
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-<!-- Leaflet -->
+<!-- JS -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<!-- app.js (Hauptlogik) -->
-<script src="app.js"></script>
+<script>
+/* === Navigation SPA === */
+$('[data-nav]').on('click', function(e){
+  e.preventDefault();
+  const page = $(this).data('nav');
+  $('section[data-page]').removeClass('active');
+  $(`section[data-page="${page}"]`).addClass('active');
+  $('.nav-link').removeClass('active');
+  $(this).addClass('active');
+});
+
+/* BTC */
+$('#btnBtc').on('click', () => {
+  $('#btcResult').text('Lade…');
+  $.getJSON('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,chf')
+    .done(r => {
+      $('#btcResult').html(`USD: ${r.bitcoin.usd} • CHF: ${r.bitcoin.chf}`);
+    });
+});
+
+/* CAT */
+$('#btnCat').on('click', () => {
+  $('#catResult').text('Lade…');
+  $.getJSON('https://api.thecatapi.com/v1/images/search')
+    .done(d => $('#catResult').html(`<img src="${d[0].url}" class="img-fluid rounded">`));
+});
+
+/* MAP */
+let map;
+$('#btnMap').on('click', () => {
+  if(map) return;
+  map = L.map('mapBox').setView([47.4988,8.7237],16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  L.marker([47.4988,8.7237]).addTo(map);
+});
+</script>
+
 </body>
 </html>
